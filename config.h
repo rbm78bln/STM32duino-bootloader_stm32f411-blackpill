@@ -119,6 +119,7 @@
 #endif
 
 /* USB string for DFU configuration string descriptor. */
+#ifndef DFU_DSC_CONFIG
 #define DFU_DSC_CONFIG      _ENABLE
 #endif
 #ifndef DFU_STR_CONFIG
