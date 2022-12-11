@@ -111,8 +111,18 @@ __isr_vector:
     .globl  System_Reset
     .type   System_Reset, %function
 
-    .globl Reset_Handler
-    .type Reset_Handler, %function
+    .globl  System_try_Reboot_into_Application
+    .type   System_try_Reboot_into_Application, %function
+
+    .globl  System_Reboot_into_Bootloader
+    .type   System_Reboot_into_Bootloader, %function
+
+    .globl  Reset_Handler
+    .type   Reset_Handler, %function
+
+    .extern dfu_timeout
+    .type   dfu_timeout, %object
+
 Reset_Handler:
 /* pulling down GPIOA12 GPIOA11 (USB-DP)*/
 /* this will force re-enumeration. Very useful if no DP control pin used */
@@ -128,6 +138,12 @@ Reset_Handler:
     str     r2, [r1, GPIO_CRH]
     ldr     r2, = 0x18000000
     str     r2, [r1, GPIO_BSRR]
+
+#if (DFU_CHECK_RTC_MAGIC_NUMBER != _DISABLE)
+    ldr     r0, = _KEY_ADDR
+    bl      rtcmagic_to_dfubootkey
+#endif
+
 /* Check key */
     ldr     r1, = _KEY_ADDR
     ldr     r2, = DFU_BOOTKEY
@@ -168,8 +184,9 @@ Reset_Handler:
     str     r0, [r1, SCB_VTOR]  //set VTOR
     ldr     r1, [r0, 0x00]      //load new MSP
     msr     MSP, r1             //set MSP
-    ldr     r3, [r0, 0x04]      //load reet vector
+    ldr     r3, [r0, 0x04]      //load reset vector
     bx      r3                  //jump to user_app
+
 .L_check_boot:
 /* Setup clock 48Mhz HSI PLL for USB */
 /* set flash latency 1 */
@@ -188,7 +205,7 @@ Reset_Handler:
 /* switch to PLL */
     movs    r2, 0x02
     strb    r2, [r5, RCC_CFGR + 0]
-    cbz     r4, .L_start_boot
+    cbz     r4, .L_start_boot_forced
 
 #if (DFU_BOOTSTRAP_GPIO != _DISABLE)
 /* checking bootstrap pin */
@@ -223,11 +240,16 @@ Reset_Handler:
 #else
     adds    r4, r2
 #endif
-    beq     .L_start_boot
+    beq     .L_start_boot_forced
     cmp     r4, 0x10
     bne     .L_scan_bootstrap
 #endif
 
+    bl      have_valid_user_app
+    cbz     r0, .L_start_boot
+
+System_try_Reboot_into_Application:
+.L_start_app:
 #if (DFU_VERIFY_CHECKSUM != _DISABLE)
     ldr     r0, = _APP_START
     ldr     r1, = __romend
@@ -235,19 +257,34 @@ Reset_Handler:
     bl      validate_checksum
     cbz     r0, .L_start_boot
 #endif
+
 /* Reset and start app */
+.L_force_app:
     ldr     r1, = _KEY_ADDR
     ldr     r2, = DFU_BOOTKEY
     mvns    r2, r2
     str     r2, [r1]
+
 System_Reset:
     dsb
     ldr     r1, = SCB
     ldr     r2, = 0x05FA0004;
     str     r2, [r1, SCB_AIRCR]
-    b .
+    b       .
 
-/* jump to bootloader */
+System_Reboot_into_Bootloader:
+.L_force_boot:
+    ldr     r1, = _KEY_ADDR
+    ldr     r2, = DFU_BOOTKEY
+    str     r2, [r1]
+    b       System_Reset
+
+.L_start_boot_forced:
+    ldr     r10, = dfu_timeout
+    ldr     r11, = DFU_TIMEOUT_RTC_MAGIC
+    str     r11, [r10]
+
+/* starting bootloader */
 .L_start_boot:
 /* do copy data */
     ldr     r1, = __etext
@@ -259,6 +296,9 @@ System_Reset:
     cmp     r3, r2
     bhi     .L_copy_data
 .L_clear_bss:
+    ldr     r10, = dfu_timeout
+    ldr     r11, [r10]
+
     movs    r0, 0x00
     ldr     r2, = __bss_start__
     ldr     r3, = __bss_end__
@@ -267,10 +307,15 @@ System_Reset:
     cmp     r3, r2
     bhi     .L_clear_bss_loop
 
+    str     r11, [r10]
+    mov     r11, 0
+    mov     r10, 0
+
 #if (DFU_SEAL_LEVEL != 0)
     ldr     r3, = seal_flash
     blx     r3
 #endif
+/* jump to bootloader */
     bl      main
     .size Reset_Handler, .-Reset_Handler
 
@@ -300,6 +345,8 @@ _default_handler:
     def_irq_handler PendSV_Handler
     def_irq_handler SysTick_Handler
 
+
+/* using RAM for this functions */
     .section .data
     .align 2
     .thumb_func

@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "config.h"
+#include "bootloader.h"
 #include "stm32.h"
 #include "usb.h"
 #include "usb_dfu.h"
@@ -58,14 +59,23 @@
     #define _APP_LENGTH DFU_APP_SIZE
 #endif
 
+#if (DFU_BOOTKEY_ADDR == _AUTO) || (DFU_BOOTKEY_ADDR == _DISABLE)
+    #define _KEY_ADDR   __stack
+#else
+    #define _KEY_ADDR   DFU_BOOTKEY_ADDR
+#endif
+
 /* DFU request buffer size data + request header */
 #define DFU_BUFSZ  ((DFU_BLOCKSZ + 3 + 8) >> 2)
 
 extern uint8_t  __app_start;
 extern uint8_t  __romend;
+extern uint32_t __stack;
 
 static uint32_t dfu_buffer[DFU_BUFSZ];
 static usbd_device dfu;
+
+uint32_t dfu_timeout;
 
 static struct dfu_data_s {
     uint8_t     (*flash)(void *romptr, const void *buf, size_t blksize);
@@ -99,6 +109,178 @@ static usbd_respond dfu_set_idle(void) {
 }
 
 extern void System_Reset(void);
+extern void System_try_Reboot_into_Application(void);
+extern void System_Reboot_into_Bootloader(void);
+
+#if (DFU_CHECK_RTC_MAGIC_NUMBER != _DISABLE)
+#ifndef RCC_APB1ENR_BKPEN
+#define RCC_APB1ENR_BKPEN 0
+#endif
+
+void rtcmagic_to_dfubootkey(uint32_t* key_addr) {
+    // enable RTC backup domain
+    RCC->APB1ENR |= (RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN);
+    PWR->CR |= PWR_CR_DBP;
+    RCC->BDCR |= RCC_BDCR_RTCEN;
+
+    switch (RTC->BKP4R)
+    {
+        case RTC_MAGIC_NUMBER_BOOTLOADER:
+            (*key_addr) = (uint32_t)DFU_BOOTKEY;
+            RTC->BKP4R = 0;
+            break;
+
+        case RTC_MAGIC_NUMBER_USERAPP:
+            (*key_addr) = ~(uint32_t)DFU_BOOTKEY;
+            RTC->BKP4R = 0;
+            break;
+
+        default:
+            break;
+    }
+
+    // restore previous state
+    RCC->BDCR &=~ RCC_BDCR_RTCEN;
+    PWR->CR &=~ PWR_CR_DBP;
+    RCC->APB1ENR &=~ (RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN);
+    return;
+}
+
+#pragma GCC diagnostic ignored "-Wunused-function"
+static uint32_t get_rtc_magic_number() {
+    uint32_t _RCC_APB1ENR, _PWR_CR, _RCC_BDCR;
+    uint32_t value;
+
+    _RCC_APB1ENR = (RCC->APB1ENR & (RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN));
+    RCC->APB1ENR |= (RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN);
+
+    _PWR_CR = (PWR->CR & PWR_CR_DBP);
+    PWR->CR |= PWR_CR_DBP;
+
+    _RCC_BDCR = (RCC->BDCR & RCC_BDCR_RTCEN);
+    RCC->BDCR |= RCC_BDCR_RTCEN;
+
+    value = RTC->BKP4R;
+
+    RCC->BDCR &= _RCC_BDCR;         // RCC->BDCR &=~ RCC_BDCR_RTCEN;
+    PWR->CR &= _PWR_CR;             // PWR->CR &=~ PWR_CR_DBP;
+    RCC->APB1ENR &= _RCC_APB1ENR;   // RCC->APB1ENR &=~ (RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN);
+    return (value);
+}
+
+static void set_rtc_magic_number(uint32_t value) {
+    uint32_t _RCC_APB1ENR, _PWR_CR, _RCC_BDCR;
+
+    _RCC_APB1ENR = (RCC->APB1ENR & (RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN));
+    RCC->APB1ENR |= (RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN);
+
+    _PWR_CR = (PWR->CR & PWR_CR_DBP);
+    PWR->CR |= PWR_CR_DBP;
+
+    _RCC_BDCR = (RCC->BDCR & RCC_BDCR_RTCEN);
+    RCC->BDCR |= RCC_BDCR_RTCEN;
+
+    RTC->BKP4R = value;
+
+    RCC->BDCR &= _RCC_BDCR;         // RCC->BDCR &=~ RCC_BDCR_RTCEN;
+    PWR->CR &= _PWR_CR;             // PWR->CR &=~ PWR_CR_DBP;
+    RCC->APB1ENR &= _RCC_APB1ENR;   // RCC->APB1ENR &=~ (RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN);
+}
+#pragma GCC diagnostic pop
+#endif
+
+#if (DFU_VERIFY_VTABLE != _DISABLE)
+static inline uint32_t check_user_code() {
+    if ( ( (*((uint32_t *)_APP_START)) & 0xFFFC0000 ) == 0x20000000) {
+        return (1);
+    } else {
+        return (0);
+    }
+}
+#endif
+
+uint32_t have_valid_user_app() {
+#if (DFU_VERIFY_VTABLE != _DISABLE)
+    if(!check_user_code()) {
+        dfu_timeout = 0;
+        return (0);
+    }
+#endif
+#if (DFU_TIMEOUT_DEFAULT == 1) // i.e. fastboot
+    return 1;
+#else
+    dfu_timeout = DFU_TIMEOUT_DEFAULT;
+    return 0;
+#endif
+}
+
+#ifndef DFU_LED_GPIO
+static void gpio_enable(uint8_t state) {}
+static void set_led(uint8_t state) {}
+static uint8_t get_led() { return (0); }
+#else
+static void gpio_enable(uint8_t state) {
+    if(state) {
+        RCC->AHB1ENR         |=  DFU_LED_RCC;
+        DFU_LED_GPIO->MODER  &=~ (0x3UL << (2*DFU_LED_PIN));
+        DFU_LED_GPIO->MODER  |=  (0x1UL << (2*DFU_LED_PIN));
+        DFU_LED_GPIO->OTYPER &=~ (0x1UL << (1*DFU_LED_PIN));
+        DFU_LED_GPIO->PUPDR  &=~ (0x3UL << (2*DFU_LED_PIN));
+#if (DFU_LED_ON_LEVEL == _LOW)
+        DFU_LED_GPIO->BSRR    =  (0x1UL << (1*DFU_LED_PIN + 0x00UL)); // = _HIGH
+#else
+        DFU_LED_GPIO->BSRR    =  (0x1UL << (1*DFU_LED_PIN + 0x10UL)); // = _LOW
+#endif
+    } else {
+#if (DFU_LED_ON_LEVEL == _LOW)
+        DFU_LED_GPIO->BSRR    =  (0x1UL << (1*DFU_LED_PIN + 0x00UL)); // = _HIGH
+#else
+        DFU_LED_GPIO->BSRR    =  (0x1UL << (1*DFU_LED_PIN + 0x10UL)); // = _LOW
+#endif
+        DFU_LED_GPIO->MODER  &=~ (0x3UL << (2*DFU_LED_PIN));
+        DFU_LED_GPIO->OTYPER &=~ (0x1UL << (1*DFU_LED_PIN));
+        DFU_LED_GPIO->PUPDR  &=~ (0x3UL << (2*DFU_LED_PIN));
+        DFU_LED_GPIO->PUPDR  |=  (0x1UL << (2*DFU_LED_PIN));
+        RCC->AHB1ENR         &=~ DFU_LED_RCC;
+    }
+}
+
+static void set_led(uint8_t state) {
+    if(state) {
+        DFU_LED_GPIO->MODER  &=~ (0x3UL << (2*DFU_LED_PIN));
+        DFU_LED_GPIO->MODER  |=  (0x1UL << (2*DFU_LED_PIN));
+        DFU_LED_GPIO->OTYPER &=~ (0x1UL << (1*DFU_LED_PIN));
+        DFU_LED_GPIO->PUPDR  &=~ (0x3UL << (2*DFU_LED_PIN));
+        DFU_LED_GPIO->BSRR    =  GPIO_BSRR_BR13;
+#if (DFU_LED_ON_LEVEL == _LOW)
+        DFU_LED_GPIO->BSRR    =  (0x1UL << (1*DFU_LED_PIN + 0x10UL)); // = _LOW
+#else
+        DFU_LED_GPIO->BSRR    =  (0x1UL << (1*DFU_LED_PIN + 0x00UL)); // = _HIGH
+#endif
+    } else {
+#if (DFU_LED_ON_LEVEL == _LOW)
+        DFU_LED_GPIO->BSRR    =  (0x1UL << (1*DFU_LED_PIN + 0x00UL)); // = _HIGH
+#else
+        DFU_LED_GPIO->BSRR    =  (0x1UL << (1*DFU_LED_PIN + 0x10UL)); // = _LOW
+#endif
+        DFU_LED_GPIO->MODER  &=~ (0x3UL << (2*DFU_LED_PIN));
+        DFU_LED_GPIO->PUPDR  &=~ (0x3UL << (2*DFU_LED_PIN));
+#if (DFU_LED_ON_LEVEL == _LOW)
+        DFU_LED_GPIO->PUPDR  |=  (0x1UL << (2*DFU_LED_PIN)); // = _PULL_UP
+#else
+        DFU_LED_GPIO->PUPDR  |=  (0x2UL << (2*DFU_LED_PIN)); // = _PULL_DOWN
+#endif
+    }
+}
+
+static uint8_t get_led() {
+#if (DFU_LED_ON_LEVEL == _LOW)
+    return ((DFU_LED_GPIO->IDR & (0x1UL << (1*DFU_LED_PIN))) == 0);
+#else
+    return ((DFU_LED_GPIO->IDR & (0x1UL << (1*DFU_LED_PIN))) != 0);
+#endif
+}
+#endif
 
 static usbd_respond dfu_err_badreq(void) {
     dfu_data.bState  = USB_DFU_STATE_DFU_ERROR;
@@ -111,6 +293,7 @@ static usbd_respond dfu_upload(usbd_device *dev, size_t blksize) {
     switch (dfu_data.bState) {
     case USB_DFU_STATE_DFU_IDLE:
     case USB_DFU_STATE_DFU_UPLOADIDLE:
+        dfu_timeout = DFU_TIMEOUT_UPDOWNLOAD;
         if (dfu_data.remained == 0) {
             dev->status.data_count = 0;
             return dfu_set_idle();
@@ -133,6 +316,7 @@ static usbd_respond dfu_dnload(void *buf, size_t blksize) {
     case    USB_DFU_STATE_DFU_DNLOADIDLE:
     case    USB_DFU_STATE_DFU_DNLOADSYNC:
     case    USB_DFU_STATE_DFU_IDLE:
+        dfu_timeout = DFU_TIMEOUT_UPDOWNLOAD;
         if (blksize == 0) {
             dfu_data.bState = USB_DFU_STATE_DFU_MANIFESTSYNC;
             return usbd_ack;
@@ -148,6 +332,9 @@ static usbd_respond dfu_dnload(void *buf, size_t blksize) {
         if (dfu_data.bStatus == USB_DFU_STATUS_OK) {
             dfu_data.dptr += blksize;
             dfu_data.remained -= blksize;
+#if (DFU_SKIP_BOOTLOADER_AFTER_DOWNLOAD != _DISABLE)
+            set_rtc_magic_number(RTC_MAGIC_NUMBER_USERAPP);
+#endif
 #if (DFU_DNLOAD_NOSYNC == _ENABLE)
             dfu_data.bState = USB_DFU_STATE_DFU_DNLOADIDLE;
 #else
@@ -312,8 +499,42 @@ static void dfu_init (void) {
 }
 
 int main (void) {
-    dfu_init();
-    while(1) {
-        usbd_poll(&dfu);
+    uint32_t timeout;
+    uint16_t i = 0;
+
+    if(dfu_timeout == 1) {
+        dfu_timeout = 0;
+        System_try_Reboot_into_Application();
     }
+
+    timeout = dfu_timeout;
+    gpio_enable(1);
+    set_led(1);
+
+    dfu_init();
+    do
+    {
+        while(timeout != 1) {
+            if(!++i) {
+                if(dfu_timeout == DFU_TIMEOUT_UPDOWNLOAD) {
+                    timeout = dfu_timeout;
+                    --dfu_timeout;
+                }
+                if(timeout>1) --timeout;
+                set_led(!get_led());
+            }
+            usbd_poll(&dfu);
+        }
+        timeout = 0;
+    } while (!check_user_code());
+
+    set_led(0);
+    gpio_enable(0);
+
+    usbd_connect(&dfu, 0);
+    usbd_enable(&dfu, 0);
+    System_try_Reboot_into_Application();
+    System_Reboot_into_Bootloader();
+    while(1);
+    return (0);
 }

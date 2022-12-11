@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"name": "STM32F411duino-bootloader",
+			"path": "."
+		}
+	],
+	"settings": {
+		"platformio-ide.autoPreloadEnvTasks": true,
+		"platformio-ide.disablePIOHomeStartup": true,
+		"files.associations": {
+			"*.json": "jsonc"
+		}
+	}
+}

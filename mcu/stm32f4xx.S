@@ -114,18 +114,35 @@ __isr_vector:
 
     .section    .text
     .thumb_func
+
     .globl  System_Reset
     .type   System_Reset, %function
 
+    .globl  System_try_Reboot_into_Application
+    .type   System_try_Reboot_into_Application, %function
+
+    .globl  System_Reboot_into_Bootloader
+    .type   System_Reboot_into_Bootloader, %function
+
     .globl  Reset_Handler
     .type   Reset_Handler, %function
+
+    .extern dfu_timeout
+    .type   dfu_timeout, %object
+
 Reset_Handler:
+#if (DFU_CHECK_RTC_MAGIC_NUMBER != _DISABLE)
+    ldr     r0, = _KEY_ADDR
+    bl      rtcmagic_to_dfubootkey
+#endif
+
+/* Check key */
     ldr     r1, = _KEY_ADDR
     ldr     r2, = DFU_BOOTKEY
     movs    r3, 0x00
     ldr     r4, [r1]
     str     r3, [r1]
-    eors    r4, r2  //R4: 0xFFFFFFFF - force APP; 0x00000000 - force BOOT
+    eors    r4, r2  //R4: 0xFFFFFFFF - force APP; 0x00000000 - force BOOT (below)
     mvns    r0, r4
     bne     .L_check_boot
 /* jump to user section */
@@ -179,7 +196,7 @@ Reset_Handler:
     ldrb    r3, [r5, RCC_CFGR + 0x00]
     orrs    r3, r1
     strb    r3, [r5, RCC_CFGR + 0x00]
-    cbz     r4, .L_start_boot
+    cbz     r4, .L_start_boot_forced  //R4: 0xFFFFFFFF - force APP (above); 0x00000000 - force BOOT
 
 #if (DFU_BOOTSTRAP_GPIO != _DISABLE)
 /* checking bootstrap pin */
@@ -224,9 +241,14 @@ Reset_Handler:
     movs    r2, 0x00
     strb    r2, [r5, RCC_AHB1RSTR]
     strb    r2, [r5, RCC_AHB1ENR]
-    cbz     r4, .L_start_boot
+    cbz     r4, .L_start_boot_forced
 #endif
 
+    bl      have_valid_user_app
+    cbz     r0, .L_start_boot
+
+System_try_Reboot_into_Application:
+.L_start_app:
 #if (DFU_VERIFY_CHECKSUM != _DISABLE)
     ldr     r0, = _APP_START
     ldr     r1, = __romend
@@ -235,30 +257,51 @@ Reset_Handler:
     cbz     r0, .L_start_boot
 #endif
 
+/* Reset and start app */
+.L_force_app:
     ldr     r1, = _KEY_ADDR
     ldr     r2, = DFU_BOOTKEY
     mvn     r2, r2
     str     r2, [r1]
+
 System_Reset:
     dsb
     ldr     r1, = SCB
     ldr     r2, = 0x05FA0004;
     str     r2, [r1, SCB_AIRCR]
-    b .
+    b       .
+
+System_Reboot_into_Bootloader:
+.L_force_boot:
+    ldr     r1, = _KEY_ADDR
+    ldr     r2, = DFU_BOOTKEY
+    str     r2, [r1]
+    b       System_Reset
+
+.L_start_boot_forced:
+    ldr     r10, = dfu_timeout
+    ldr     r11, = DFU_TIMEOUT_RTC_MAGIC
+    str     r11, [r10]
 
 /* starting bootloader */
 .L_start_boot:
+/* do copy data */
     ldr     r1, = __etext
     ldr     r2, = __data_start__
     ldr     r3, = __data_end__
     subs    r3, r2
     ble     .L_clear_bss
+
 .L_copy_data:
     subs    r3, 0x04
     ldr     r0, [r1, r3]
     str     r0, [r2, r3]
     bgt     .L_copy_data
+
 .L_clear_bss:
+    ldr     r10, = dfu_timeout
+    ldr     r11, [r10]
+
     ldr     r1, = __bss_start__
     ldr     r2, = __bss_end__
     movs    r3, 0
@@ -267,6 +310,11 @@ System_Reset:
     adds    r1, 0x04
     cmp     r1, r2
     bcc     .L_bss_loop
+
+    str     r11, [r10]
+    mov     r11, 0
+    mov     r10, 0
+
 #if defined(USBD_PRIMARY_OTGHS)
 /* Enabling USB pins GPIOB14 GPIOB15 AF12*/
     movs    r1, 0x02
@@ -328,7 +376,7 @@ _default_handler:
     .thumb_func
     .globl program_flash
     .type program_flash, %function
-/* R0 <- addrss to flash
+/* R0 <- address to flash
  * R1 <- buffer
  * R2 <- block size
  * R0 -> DFU_STATUS

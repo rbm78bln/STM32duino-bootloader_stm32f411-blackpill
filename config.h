@@ -67,56 +67,73 @@
 #ifndef DFU_DNLOAD_NOSYNC
 #define DFU_DNLOAD_NOSYNC   _ENABLE
 #endif
+
 /** Add extra DFU interface for EEPROM */
 #ifndef DFU_INTF_EEPROM
 #define DFU_INTF_EEPROM     _AUTO
 #endif
+
 /** Firmware can be uploaded from device */
 #ifndef DFU_CAN_UPLOAD
 #define DFU_CAN_UPLOAD      _ENABLE
 #endif
+
 /** Handle DFU_DETACH request in DFU mode. System reset will be issued. */
 #ifndef DFU_DETACH
 #define DFU_DETACH          _ENABLE
 #endif
+
+/** Whether application image is checked by its vector table */
+#ifndef DFU_VERIFY_VTABLE
+#define DFU_VERIFY_VTABLE     _ENABLE
+#endif
+
 /** Whether application image is verified by a checksum algorithm */
 #ifndef DFU_VERIFY_CHECKSUM
 #define DFU_VERIFY_CHECKSUM _DISABLE
 #endif
+
 /** Memory Readout Protection level **/
 #ifndef DFU_SEAL_LEVEL
 #define DFU_SEAL_LEVEL      0
 #endif
+
 /* USB VID */
 #ifndef DFU_VENDOR_ID
 #define DFU_VENDOR_ID       0x0483
 #endif
+
 /* USB PID */
 #ifndef DFU_DEVICE_ID
 #define DFU_DEVICE_ID       0xDF11
 #endif
+
 /* USB manufacturer string */
 #ifndef DFU_STR_MANUF
 #define DFU_STR_MANUF       "Your company name"
 #endif
+
 /* USB product sting */
 #ifndef DFU_STR_PRODUCT
 #define DFU_STR_PRODUCT     "Secure bootloader"
 #endif
-/* USB string for DFU configureation string descriptor. */
-#ifndef DFU_DSC_CONFIG
+
+/* USB string for DFU configuration string descriptor. */
 #define DFU_DSC_CONFIG      _ENABLE
 #endif
 #ifndef DFU_STR_CONFIG
 #define DFU_STR_CONFIG      "DFU"
 #endif
+
 /* USB string for DFU flash interface string descriptor. */
 #ifndef DFU_DSC_FLASH
 #define DFU_DSC_FLASH       _ENABLE
 #endif
 #ifndef DFU_STR_FLASH
 #define DFU_STR_FLASH       "Internal flash"
+//#define DFU_STR_FLASH       "@Internal Flash/0x08000000/04*016Kg,01*064Kg,03*128Kg"
 #endif
+
 /* USB string for DFU EEPROM interface sreing descriptor */
 #ifndef DFU_DSC_EEPROM
 #define DFU_DSC_EEPROM      _ENABLE
@@ -124,8 +141,10 @@
 #ifndef DFU_STR_EEPROM
 #define DFU_STR_EEPROM       "Internal EEPROM"
 #endif
+
 /* USB EP0 size. Must be 8 for USB FS */
 #define DFU_EP0_SIZE        8
+
 /* DFU properties */
 #ifndef DFU_POLL_TIMEOUT
 #define DFU_POLL_TIMEOUT    20
@@ -134,50 +153,102 @@
 #define DFU_DETACH_TIMEOUT  200
 #endif
 #ifndef DFU_BLOCKSZ
-#define DFU_BLOCKSZ         0x80
+#define DFU_BLOCKSZ         0x800
 #endif
+
+/** Whether the RTC register is checked to enforce bootloader or user application mode */
+#ifndef DFU_CHECK_RTC_MAGIC_NUMBER
+#define DFU_CHECK_RTC_MAGIC_NUMBER  _ENABLE
+#endif
+#ifndef RTC_MAGIC_NUMBER_BOOTLOADER
+#define RTC_MAGIC_NUMBER_BOOTLOADER 0x424c
+#endif
+#ifndef RTC_MAGIC_NUMBER_USERAPP
+#define RTC_MAGIC_NUMBER_USERAPP    0x424d
+#endif
+
 /* 32 bit DFU bootkey value */
 #ifndef DFU_BOOTKEY
 #define DFU_BOOTKEY         0x157F32D4
 #endif
+
 /* DFU bootkey address. Top of the ram by default. _AUTO, _DISABLE or set address.
  * May be enabled internally. */
 #ifndef DFU_BOOTKEY_ADDR
 #define DFU_BOOTKEY_ADDR    _AUTO
 #endif
+
 /* DFU bootstrap port/pin settings. Set GPIOx or _DISABLE */
 #ifndef DFU_BOOTSTRAP_GPIO
 #define DFU_BOOTSTRAP_GPIO  GPIOA
 #endif
 #ifndef DFU_BOOTSTRAP_PIN
-#define DFU_BOOTSTRAP_PIN   1
+#define DFU_BOOTSTRAP_PIN   0
 #endif
+
 /* Active bootstrap pin logic level. _HIGH, _LOW */
 #ifndef DFU_BOOTSTRAP_LEVEL
 #define DFU_BOOTSTRAP_LEVEL _LOW
 #endif
+
 /* Pullup or pulldown settings for the bootstrap pin _AUTO, _DISABLE, _HIGH, _LOW */
 #ifndef DFU_BOOTSTRAP_PULL
 #define DFU_BOOTSTRAP_PULL  _AUTO
 #endif
+
 /* Double reset waiting time in mS. _DISABLE or time in mS */
 #ifndef DFU_DBLRESET_MS
 #define DFU_DBLRESET_MS     300
 #endif
+
+/* DFU bootstrap port/pin settings. Set GPIOx or _DISABLE */
+#ifndef DFU_LED_GPIO
+#define DFU_LED_GPIO  GPIOC
+#endif
+#ifndef DFU_LED_RCC
+#define DFU_LED_RCC   0x004 // (0x1UL << 'x'-'A') => A=0x001, B=0x002, C=0x004 etc
+#endif
+#ifndef DFU_LED_PIN
+#define DFU_LED_PIN   13
+#endif
+#ifndef DFU_LED_ON_LEVEL
+#define DFU_LED_ON_LEVEL _LOW
+#endif
+
+/* Exit the bootloader into the user application after this many "time units" */
+/* (0 = never, 1 = instantly/fastboot, 6 = 0.5s/minimum, 680 = 60s, ...32bit) */
+#ifndef DFU_TIMEOUT_DEFAULT
+#define DFU_TIMEOUT_DEFAULT       6 // =  0.5s: use dfu-util -w
+#endif
+#ifndef DFU_TIMEOUT_RTC_MAGIC
+#define DFU_TIMEOUT_RTC_MAGIC    35 // =  3s
+#endif
+#ifndef DFU_TIMEOUT_UPDOWNLOAD
+#define DFU_TIMEOUT_UPDOWNLOAD  680 // = 60s
+#endif
+
+/* Skip entering the bootloader after download even when fastboot is disabled */
+#ifndef DFU_SKIP_BOOTLOADER_AFTER_DOWNLOAD
+#define DFU_SKIP_BOOTLOADER_AFTER_DOWNLOAD _DISABLE
+#endif
+
 /* User application address. _AUTO or page aligned address.
  * for _AUTO check __app_start address in output linker map file*/
 #ifndef DFU_APP_START
 #define DFU_APP_START       _AUTO
 #endif
+
 /* User application size. _AUTO or required size in bytes. */
 #ifndef DFU_APP_SIZE
 #define DFU_APP_SIZE        _AUTO
 #endif
+
 /* Microsoft WCID allows automatic driver (WinUSB) installation on device
  * connection. Use _ENABLE to make your device likeable by Windows. */
 #ifndef DFU_WCID
 #define DFU_WCID _DISABLE
 #endif
+
 /* Cipher to use. set _DISABLE or choose from implemented ciphers */
 #ifndef DFU_CIPHER
 #define DFU_CIPHER          DFU_CIPHER_RC5
@@ -185,6 +256,7 @@
 #ifndef DFU_CIPHER_MODE
 #define DFU_CIPHER_MODE     DFU_CIPHER_CBC
 #endif
+
 /** DFU secure key. */
 #define DFU_AES_KEY_A       0x2D, 0x4D, 0x61, 0x6B, 0x65, 0x4C, 0x6F, 0x76, \
                             0x65, 0x4E, 0x6F, 0x74, 0x57, 0x61, 0x72, 0x2D

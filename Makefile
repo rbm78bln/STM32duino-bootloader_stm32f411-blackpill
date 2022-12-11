@@ -162,25 +162,26 @@ swclean: | $(SWODIR)
 
 clean: swclean fwclean
 
-FWTARGETS   = stm32l100x6a stm32l100x8a stm32l100xba stm32l100xc
-FWTARGETS  += stm32l151x6a stm32l151x8a stm32l151xba stm32l151xc stm32l151xd stm32l151xe
-FWTARGETS  += stm32l152x6a stm32l152x8a stm32l152xba stm32l152xc stm32l152xd stm32l152xe
-FWTARGETS  += stm32l152xc stm32l162xc stm32l162xd stm32l162xe
-FWTARGETS  += stm32l052x6 stm32l052x8 stm32l053x6 stm32l053x8
-FWTARGETS  += stm32l062x8 stm32l063x8
-FWTARGETS  += stm32l072v8 stm32l072xb stm32l072xc
-FWTARGETS  += stm32l073v8 stm32l073xb stm32l073xc
-FWTARGETS  += stm32l476xc stm32l476xe stm32l476xg
-FWTARGETS  += stm32f103x4 stm32f103x6 stm32f103x8 stm32f103xb stm32f103xc
-FWTARGETS  += stm32f303xb stm32f303xc stm32f303xd stm32f303xe
-FWTARGETS  += stm32f401xe stm32f411xe stm32f429xe stm32f429xg stm32f429xi stm32f429xi_hs
-FWTARGETS  += stm32f105xb stm32f107xb
-FWTARGETS  += stm32l433xb stm32l433xc
-FWTARGETS  += stm32f070x6 stm32f070xb stm32f072x8
-FWTARGETS  += stm32g431x6 stm32g431x8 stm32g431xb
-FWTARGETS  += stm32g474xb stm32g474xc stm32g474xe
-FWTARGETS  += stm32f446xc stm32f446xc_hs stm32f446xe stm32f446xe_hs
-FWTARGETS  += stm32f405xg stm32f405xg_hs
+#FWTARGETS   = stm32l100x6a stm32l100x8a stm32l100xba stm32l100xc
+#FWTARGETS  += stm32l151x6a stm32l151x8a stm32l151xba stm32l151xc stm32l151xd stm32l151xe
+#FWTARGETS  += stm32l152x6a stm32l152x8a stm32l152xba stm32l152xc stm32l152xd stm32l152xe
+#FWTARGETS  += stm32l152xc stm32l162xc stm32l162xd stm32l162xe
+#FWTARGETS  += stm32l052x6 stm32l052x8 stm32l053x6 stm32l053x8
+#FWTARGETS  += stm32l062x8 stm32l063x8
+#FWTARGETS  += stm32l072v8 stm32l072xb stm32l072xc
+#FWTARGETS  += stm32l073v8 stm32l073xb stm32l073xc
+#FWTARGETS  += stm32l476xc stm32l476xe stm32l476xg
+#FWTARGETS  += stm32f103x4 stm32f103x6 stm32f103x8 stm32f103xb stm32f103xc
+#FWTARGETS  += stm32f303xb stm32f303xc stm32f303xd stm32f303xe
+#FWTARGETS  += stm32f401xe stm32f411xe stm32f429xe stm32f429xg stm32f429xi stm32f429xi_hs
+#FWTARGETS  += stm32f105xb stm32f107xb
+#FWTARGETS  += stm32l433xb stm32l433xc
+#FWTARGETS  += stm32f070x6 stm32f070xb stm32f072x8
+#FWTARGETS  += stm32g431x6 stm32g431x8 stm32g431xb
+#FWTARGETS  += stm32g474xb stm32g474xc stm32g474xe
+#FWTARGETS  += stm32f446xc stm32f446xc_hs stm32f446xe stm32f446xe_hs
+#FWTARGETS  += stm32f405xg stm32f405xg_hs
+FWTARGETS   = stm32f401xe stm32f411xe stm32f401xe_0x2000 stm32f411xe_0x2000
 
 $(FWTARGETS) : fwclean
 
@@ -454,11 +455,23 @@ stm32f401xe :
 	                   FWDEFS='STM32F4 STM32F401xE' \
 	                   LDPARAMS='ROMLEN=512K RAMLEN=96K APPALIGN=0x4000'
 
+stm32f401xe_0x2000 :
+	$(MAKE) bootloader FWCPU='-mcpu=cortex-m4' \
+	                   FWSTARTUP='mcu/stm32f4xx.S' \
+	                   FWDEFS='STM32F4 STM32F401xE' \
+	                   LDPARAMS='ROMLEN=512K RAMLEN=96K APPALIGN=0x2000'
+
 stm32f411xe :
 	$(MAKE) bootloader FWCPU='-mcpu=cortex-m4' \
 	                   FWSTARTUP='mcu/stm32f4xx.S' \
 	                   FWDEFS='STM32F4 STM32F411xE' \
 	                   LDPARAMS='ROMLEN=512K RAMLEN=128K APPALIGN=0x4000'
+
+stm32f411xe_0x2000 :
+	$(MAKE) bootloader FWCPU='-mcpu=cortex-m4' \
+	                   FWSTARTUP='mcu/stm32f4xx.S' \
+	                   FWDEFS='STM32F4 STM32F411xE' \
+	                   LDPARAMS='ROMLEN=512K RAMLEN=128K APPALIGN=0x2000'
 
 stm32f429xe :
 	$(MAKE) bootloader FWCPU='-mcpu=cortex-m4' \

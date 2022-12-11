@@ -45,6 +45,7 @@ static void exithelp(void) {
     exit(0);
 }
 
+#if (DFU_VERIFY_CHECKSUM != _DISABLE)
 static char *strsign(const void *data, size_t len) {
     static char s[0x100];
     char *t = s;
@@ -58,10 +59,13 @@ static char *strsign(const void *data, size_t len) {
     *t = '\0';
     return s;
 }
+#endif
 
 static uint32_t get_vidpid(const char *data) {
+    unsigned int _vid, _pid;
     uint32_t vid, pid;
-    if (2 == sscanf(data, "%x:%x", &vid, &pid)) {
+    if (2 == sscanf(data, "%x:%x", &_vid, &_pid)) {
+        vid = _vid; pid = _pid;
         if (vid <= 0xFFFF && pid <= 0xFFFF) {
             return vid << 16 | pid;
         }
@@ -143,7 +147,7 @@ int main(int argc, char **argv)
         {
         case 'C':
             enc = 0;
-            break;    
+            break;
         case 'e':
             dir = 1;
             break;
@@ -199,7 +203,9 @@ int main(int argc, char **argv)
 
     size_t   blen = length + 0x1000;
     uint32_t *buf = malloc(blen);
+#if (DFU_VERIFY_CHECKSUM != _DISABLE)
     uint8_t  *buf8 = (uint8_t*)buf;
+#endif
 
     if (buf == NULL) {
         printf("Failed to allocate buffer. length %zd\n", blen);
