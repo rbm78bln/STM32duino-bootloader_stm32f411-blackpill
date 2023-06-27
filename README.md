@@ -55,4 +55,12 @@ Not all combinations make sense! You choose! ([userconfig.h](https://github.com/
 + Make a double reset during the DFU_DBLRESET_MS period
 + Overwrite the first four bytes of your user firmware
 
-![Ralf Miunske](https://miunske.eu/github/?sboot_stm32f411)
+## Using the bootloader
+In [```examples/hello_world```](examples/hello_world) you can find a very basic example on how to use this bootloader for your daily work with [PlatformIO](https://docs.platformio.org/en/latest/integration/ide/vscode.html) and VSCode.
+<br>
+
+#### How can I use this bootloader with Arduino IDE?
+What is [Arduino IDE](https://github.com/arduino/arduino-ide)?
+<br>
+
+![sboot_stm32f411](https://miunske.eu/github/?sboot_stm32f411)
